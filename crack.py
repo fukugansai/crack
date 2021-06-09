@@ -13,11 +13,11 @@ LATTICE_SHAPE = (LATTICE_SIZE, LATTICE_SIZE)
 pos = np.zeros(LATTICE_VEC_SHAPE)
 
 # ゴムが切れる長さの平均
-LIMIT_AVR_H = 12.0
+LIMIT_AVR_H = 11.0
 LIMIT_AVR_V = 11.0
 # ゴムが切れる長さの偏差値
-LIMIT_DEV_H = 1.0
-LIMIT_DEV_V = 1.0
+LIMIT_DEV_H = 0.3
+LIMIT_DEV_V = 0.3
 # ゴムが切れる長さ
 rubber_limit_h = np.random.normal(LIMIT_AVR_H, LIMIT_DEV_H, LATTICE_SHAPE)
 rubber_limit_v = np.random.normal(LIMIT_AVR_V, LIMIT_DEV_V, LATTICE_SHAPE)
@@ -25,13 +25,43 @@ rubber_limit_v = np.random.normal(LIMIT_AVR_V, LIMIT_DEV_V, LATTICE_SHAPE)
 LIMIT_H_SUB = 0.01
 LIMIT_V_SUB = 0.01
 
+# ゴムを部分的に強くしてみる処理
+'''
+for i in range(10):
+    for j in range(3):
+        for k in range(LATTICE_SIZE):
+            rubber_limit_h[i*20+j, k] = 100
+            rubber_limit_v[i*20+j, k] = 100
+            rubber_limit_h[k, i*20+j] = 100
+            rubber_limit_v[k, i*20+j] = 100
+    for j in range(17, 20):
+        for k in range(LATTICE_SIZE):
+            rubber_limit_h[i*20+j, k] = 100
+            rubber_limit_v[i*20+j, k] = 100
+            rubber_limit_h[k, i*20+j] = 100
+            rubber_limit_v[k, i*20+j] = 100
+'''
+
 # ゴムの引っ張りにどれだけ格子点が動かされるか
 RUBBER_INTENSITY = 0.1
-RUBBER_INTENSITY_ANCHOR = 0.5
+RUBBER_INTENSITY_ANCHOR = 0.3
+# 定数でなく行列だとどうなるか実験
+RUBBER_INTENSITY_ANCHOR_MATRIX = np.array([[0.5, -0.5], [0.5, 0.5]])
 
 # ゴムが切れているフラグ
 rubber_cut_h = np.array([[False for i in range(LATTICE_SIZE)] for j in range(LATTICE_SIZE)])
 rubber_cut_v = np.array([[False for i in range(LATTICE_SIZE)] for j in range(LATTICE_SIZE)])
+
+# 最初からゴムを切っておく処理
+'''
+for i in range(LATTICE_SIZE):
+    rubber_cut_h[i, 0] = True
+    if np.random.random() > 0.99:
+        rubber_cut_h[i, 1] = True
+    rubber_cut_h[i, LATTICE_SIZE-1] = True
+    if np.random.random() > 0.99:
+        rubber_cut_h[i, LATTICE_SIZE-2] = True
+'''
 
 # ゴムの長さ
 rubber_length_h = np.array([[EDGE_SIZE for i in range(LATTICE_SIZE)] for j in range(LATTICE_SIZE)])
@@ -46,10 +76,8 @@ D0 = EDGE_SIZE
 LOOP_TIMES = 10
 
 # 収束条件
-LIMIT_STRESS = 0.1
-
-# GIF出力用
-gifimages = []
+LIMIT_STRESS = 0.001
+# GIF出力用 gifimages = []
 gifstatus = 0 # 0:最初、1:GIF用画像データ収集中、3:GIF出力すべし
 
 # ImageDraw draw
@@ -89,11 +117,18 @@ def update(draw, created_image):
         # 左と繋がっていれば張力を加算する
         tension += np.where(rh1 == False, np.roll(pos, +1, axis=0) - pos + [-D0, 0], 0.0)
         # アンカーからの引っ張り
+        #tension -= pos * anchor # アンカーの強さに傾斜を設ける場合
         tension -= pos * RUBBER_INTENSITY_ANCHOR
+        # 定数でなく行列をかけたらどうなるか実験
+        # td = np.array([[np.dot(RUBBER_INTENSITY_ANCHOR_MATRIX, y) for y in x] for x in pos])
+        # tension -= td
+        #tension -= pos * RUBBER_INTENSITY_ANCHOR
 
+        # 動きがなくなった時点でループを脱出する
         tensionNorm = np.array([[np.linalg.norm(y) for y in x] for x in tension])
         if np.amax(tensionNorm) < LIMIT_STRESS:
-            break
+           break
+
         # 結節点を張力の方向に移動する
         pos += tension * RUBBER_INTENSITY
 
@@ -103,7 +138,9 @@ def update(draw, created_image):
         diff = np.roll(pos, -1, axis=1) - pos + [0, EDGE_SIZE]
         rubber_length_v = np.array([[np.linalg.norm(y) for y in x] for x in diff])
 
-    # メッシュを描画する
+    # print("count=", count)
+
+    # 格子を描画する
     draw.rectangle((0, 0, LATTICE_SIZE*D0, LATTICE_SIZE*D0), fill=(255, 255, 255, 0))
     for x in range(LATTICE_SIZE):
         for y in range(LATTICE_SIZE):
@@ -116,7 +153,8 @@ def update(draw, created_image):
                 draw.line(((p0[0], p0[1]), (py[0], py[1])), fill=(0, 0, 128))
 
     global gifimages
-    if gifstatus == 1:
+    # メモリを無限に食い潰さないためのストッパー付き
+    if gifstatus == 1 and len(gifimages) < 1000:
         # GIF用の画像を出力
         gifimages.append(created_image.copy())
 
